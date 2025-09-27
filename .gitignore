@@ -98,3 +98,5 @@ Thumbs.db
 
 # Docker
 .dockerignore
+
+provision-azure.sh

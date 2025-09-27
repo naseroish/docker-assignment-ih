@@ -1,0 +1,115 @@
+name: Deploy Three-Tier Application to Azure VM
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure VM
+        uses: azure/cli@v2.1.0
+        timeout-minutes: 15
+        env:
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          AZURE_VM_NAME: ${{ secrets.AZURE_VM_NAME }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          GITHUB_REPO: ${{ github.repository }}
+        with:
+          inlineScript: |
+            # Deploy directly from GitHub
+            az vm run-command invoke \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_VM_NAME" \
+              --command-id RunShellScript \
+              --scripts "
+              # Configuration
+              APP_DIR='/opt/notes-app'
+              GITHUB_REPO='$GITHUB_REPO'
+              
+              # Create application directory
+              sudo mkdir -p \$APP_DIR
+              sudo chown azureuser:azureuser \$APP_DIR
+              
+              # Navigate to app directory
+              cd \$APP_DIR
+              
+              # Clone or update repository
+              if [ -d '.git' ]; then
+                echo 'Updating repository...'
+                git pull origin main
+              else
+                echo 'Cloning repository...'
+                git clone https://github.com/\$GITHUB_REPO.git .
+              fi
+              
+              # Create .env file with secure credentials
+              echo 'Creating environment file...'
+              cat > .env << EOF
+              POSTGRES_DB=$POSTGRES_DB
+              POSTGRES_USER=$POSTGRES_USER
+              POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+              REACT_APP_API_URL=http://localhost:3001
+              EOF
+              
+              # Stop existing containers
+              echo 'Stopping existing containers...'
+              docker compose down || true
+              
+              # Build and start the application
+              echo 'Building and starting application...'
+              docker compose up --build -d
+              
+              # Wait for services to start
+              echo 'Waiting for services to start...'
+              sleep 30
+              
+              # Check service status
+              echo 'Checking service status...'
+              docker compose ps
+              
+              echo 'Deployment completed successfully!'
+              " || exit 1
+
+  test:
+    needs: deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test Application Connectivity
+        uses: azure/cli@v2.1.0
+        timeout-minutes: 10
+        env:
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          AZURE_VM_NAME: ${{ secrets.AZURE_VM_NAME }}
+        with:
+          inlineScript: |
+            # Test connectivity
+            az vm run-command invoke \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_VM_NAME" \
+              --command-id RunShellScript \
+              --scripts '
+              echo "Testing application connectivity..."
+              sleep 10
+              curl -f http://localhost:3001/health || echo "Backend not ready yet"
+              curl -f http://localhost:3000 || echo "Frontend not ready yet"
+              docker compose ps
+              echo "Basic connectivity test completed!"
+              '

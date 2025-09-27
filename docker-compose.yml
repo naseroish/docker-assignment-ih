@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: notes-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - notes-network
+
+  # Backend API
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: notes-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-notes_db}
+    ports:
+      - "3001:3001"
+    depends_on:
+      - postgres
+    networks:
+      - notes-network
+
+  # Frontend
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: notes-frontend
+    restart: unless-stopped
+    environment:
+      - REACT_APP_API_URL=http://localhost:3001
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - notes-network
+
+# Named volumes
+volumes:
+  postgres_data:
+    driver: local
+
+# Custom network
+networks:
+  notes-network:
+    driver: bridge
