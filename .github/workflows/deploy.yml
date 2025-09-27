@@ -33,6 +33,10 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
         with:
           inlineScript: |
+            echo "Deploying to Resource Group: $AZURE_RESOURCE_GROUP"
+            echo "Deploying to VM: $AZURE_VM_NAME"
+            echo "Repository: $GITHUB_REPO"
+            
             # Deploy directly from GitHub
             az vm run-command invoke \
               --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -42,6 +46,10 @@ jobs:
               # Configuration
               APP_DIR='/opt/notes-app'
               GITHUB_REPO='$GITHUB_REPO'
+              
+              echo 'Starting deployment...'
+              echo 'Target directory: \$APP_DIR'
+              echo 'Repository: \$GITHUB_REPO'
               
               # Create application directory
               sudo mkdir -p \$APP_DIR
@@ -85,7 +93,7 @@ jobs:
               docker compose ps
               
               echo 'Deployment completed successfully!'
-              " || exit 1
+              "
 
   test:
     needs: deploy
@@ -100,6 +108,9 @@ jobs:
           AZURE_VM_NAME: ${{ secrets.AZURE_VM_NAME }}
         with:
           inlineScript: |
+            echo "Testing connectivity on Resource Group: $AZURE_RESOURCE_GROUP"
+            echo "Testing connectivity on VM: $AZURE_VM_NAME"
+            
             # Test connectivity
             az vm run-command invoke \
               --resource-group "$AZURE_RESOURCE_GROUP" \
