@@ -69,15 +69,16 @@ jobs:
               
               # Create .env file with secure credentials
               echo 'Creating environment file...'
-              cat > .env << EOF
+              cat > .env << ENVEOF
               POSTGRES_DB=$POSTGRES_DB
-              POSTGRES_USER=$POSTGRES_USER
+              POSTGRES_USER=$POSTGRES_USER  
               POSTGRES_PASSWORD=$POSTGRES_PASSWORD
               REACT_APP_API_URL=http://\$(curl -s http://checkip.amazonaws.com):3001
-              EOF
+              ENVEOF
               
-              echo 'Environment file created:'
+              echo 'Environment file contents:'
               cat .env
+              
               
               # Stop existing containers
               echo 'Stopping existing containers...'
@@ -144,7 +145,7 @@ jobs:
               docker compose ps
               
               echo "=== Port Status ==="
-              netstat -tlnp | grep -E ":(3000|3001|5432)"
+              ss -tlnp | grep -E ":(3000|3001|5432)" || echo "No ports listening"
               
               echo "=== Testing Local Connectivity ==="
               curl -I http://localhost:3000 || echo "Frontend not responding on localhost:3000"
@@ -154,8 +155,8 @@ jobs:
               docker compose logs --tail=10 frontend || echo "No frontend logs"
               docker compose logs --tail=10 backend || echo "No backend logs"
               
-              echo "=== Firewall Status ==="
-              sudo ufw status || echo "UFW not configured"
+              echo "=== Environment File ==="
+              cat .env || echo "No .env file found"
               
               echo "Basic connectivity test completed!"
               '
