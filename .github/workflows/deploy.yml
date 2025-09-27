@@ -73,8 +73,11 @@ jobs:
               POSTGRES_DB=$POSTGRES_DB
               POSTGRES_USER=$POSTGRES_USER
               POSTGRES_PASSWORD=$POSTGRES_PASSWORD
-              REACT_APP_API_URL=http://localhost:3001
+              REACT_APP_API_URL=http://\$(curl -s http://checkip.amazonaws.com):3001
               EOF
+              
+              echo 'Environment file created:'
+              cat .env
               
               # Stop existing containers
               echo 'Stopping existing containers...'
@@ -86,11 +89,21 @@ jobs:
               
               # Wait for services to start
               echo 'Waiting for services to start...'
-              sleep 30
+              sleep 45
               
-              # Check service status
+              # Check service status and logs
               echo 'Checking service status...'
               docker compose ps
+              
+              echo 'Checking container logs...'
+              docker compose logs --tail=20
+              
+              echo 'Checking if ports are listening...'
+              netstat -tlnp | grep -E ':(3000|3001|5432)'
+              
+              echo 'Testing local connectivity...'
+              curl -I http://localhost:3000 || echo 'Frontend not responding'
+              curl -I http://localhost:3001 || echo 'Backend not responding'
               
               echo 'Deployment completed successfully!'
               "
@@ -100,6 +113,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Azure Login (Service Principal)
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
       - name: Test Application Connectivity
         uses: azure/cli@v2.1.0
         timeout-minutes: 10
@@ -111,16 +129,33 @@ jobs:
             echo "Testing connectivity on Resource Group: $AZURE_RESOURCE_GROUP"
             echo "Testing connectivity on VM: $AZURE_VM_NAME"
             
-            # Test connectivity
+            # Test connectivity and get VM public IP
             az vm run-command invoke \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --name "$AZURE_VM_NAME" \
               --command-id RunShellScript \
               --scripts '
-              echo "Testing application connectivity..."
-              sleep 10
-              curl -f http://localhost:3001/health || echo "Backend not ready yet"
-              curl -f http://localhost:3000 || echo "Frontend not ready yet"
+              echo "=== System Information ==="
+              echo "VM Public IP: \$(curl -s http://checkip.amazonaws.com)"
+              echo "Docker status: \$(systemctl is-active docker)"
+              
+              echo "=== Container Status ==="
+              cd /opt/notes-app
               docker compose ps
+              
+              echo "=== Port Status ==="
+              netstat -tlnp | grep -E ":(3000|3001|5432)"
+              
+              echo "=== Testing Local Connectivity ==="
+              curl -I http://localhost:3000 || echo "Frontend not responding on localhost:3000"
+              curl -I http://localhost:3001 || echo "Backend not responding on localhost:3001"
+              
+              echo "=== Recent Container Logs ==="
+              docker compose logs --tail=10 frontend || echo "No frontend logs"
+              docker compose logs --tail=10 backend || echo "No backend logs"
+              
+              echo "=== Firewall Status ==="
+              sudo ufw status || echo "UFW not configured"
+              
               echo "Basic connectivity test completed!"
               '
